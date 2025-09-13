@@ -192,10 +192,12 @@ router.post("/flightOffersSearch", async (req, res) => {
         associatedAdultId: 1,
       };
     }
-    if (flightSearch[0].departureDateTimeRange.length < 2) return true; // Skip validation for one-way flights
-    if (flightSearch?.[1]?.departureDateTimeRange) {
+    // Only validate return date for round trips
+    if (flightSearch.length > 1 && flightSearch[1]?.departureDateTimeRange) {
       const firstDeparture = new Date(flightSearch[0].departureDateTimeRange);
-      const secondDeparture = new Date(flightSearch[1].departureDateTimeRange);
+      const secondDeparture = new Date(
+        flightSearch[1].departureDateTimeRange
+      );
       if (secondDeparture < firstDeparture) {
         throw new Error(
           "Return flight date must be after outbound flight date."
