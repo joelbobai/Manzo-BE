@@ -4,9 +4,12 @@ const FlightBooking = require("./model");
 // const IataAirport = require("./public/IATA_airports.json");
 const axios = require("axios");
 // const { paystackVerifyTransaction } = require("../../config/paystack");
-const { AMA_API_KEY, BEARER_KEY } = process.env;
+const { AMA_API_KEY, BEARER_KEY, NODE_ENV } = process.env;
 
-let Domain = "https://travel.api.amadeus.com";
+let Domain =
+  NODE_ENV === "development"
+    ? "https://test.travel.api.amadeus.com"
+    : "https://travel.api.amadeus.com";
 
 const flightOffers = async (flightSearch) => {
   try {

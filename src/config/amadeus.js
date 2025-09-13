@@ -3,7 +3,6 @@ const axios = require("axios");
 // .Env config
 require("dotenv").config();
 
-const tokenUrl = "https://travel.api.amadeus.com/v1/security/oauth2/token";
 // url
 const {
   CLIENT_ID,
@@ -14,15 +13,21 @@ const {
   CLIENTSECRET,
   GUEST_OFFICE_ID,
   AMA_API_KEY,
+  NODE_ENV,
   BEARER_KEY,
   USAP,
 } = process.env;
 
+const tokenUrl =
+  NODE_ENV === "development"
+    ? "https://test.travel.api.amadeus.com/v1/security/oauth2/token"
+    : "https://travel.api.amadeus.com/v1/security/oauth2/token";
+
 const data = new URLSearchParams({
   "Accept-Encoding": "gzip, deflate",
   grant_type: "client_credentials",
-  client_id: PCLIENTID,
-  client_secret: PCLIENTSECRET,
+  client_id: NODE_ENV === "development" ? CLIENTID : PCLIENTID,
+  client_secret: NODE_ENV === "development" ? CLIENTSECRET : PCLIENTSECRET,
   guest_office_id: GUEST_OFFICE_ID,
   USAP: USAP,
   Authorization: `Bearer ${BEARER_KEY}`,
