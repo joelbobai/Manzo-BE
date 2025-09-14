@@ -180,78 +180,48 @@ router.post("/flightOffersSearch", async (req, res) => {
     console.log(value);
     console.log(accessToken);
 
-    for (let i = 0; i < flightSearch.length; i++) {
-      FlightSearch.searchCriteria.flightFilters.cabinRestrictions[i] = {
+    FlightSearch.searchCriteria.flightFilters.cabinRestrictions = flightSearch.map(
+      ({ id }) => ({
         cabin: passenger.travelClass,
         coverage: "MOST_SEGMENTS",
-        originDestinationIds: [flightSearch[i].id],
-      };
-    }
-    for (let i = 0; i < flightSearch.length; i++) {
-      // let id = flightSearch[i].id.trim();
+        originDestinationIds: [id],
+      })
+    );
 
-      let departureDateTimeRange =
-        flightSearch[i].departureDateTimeRange.trim();
-      if (flexibleDate) {
-        FlightSearch.originDestinations[i] = {
-          id: flightSearch[i].id,
-          originLocationCode: flightSearch[i].originLocationCode,
-          destinationLocationCode: flightSearch[i].destinationLocationCode,
-          departureDateTimeRange: {
-            date: departureDateTimeRange,
-            dateWindow: flexibleDate,
-          },
-        };
-      } else {
-        FlightSearch.originDestinations[i] = {
-          id: flightSearch[i].id,
-          originLocationCode: flightSearch[i].originLocationCode,
-          destinationLocationCode: flightSearch[i].destinationLocationCode,
-          departureDateTimeRange: {
-            date: departureDateTimeRange,
-          },
-        };
-      }
-    }
+    FlightSearch.originDestinations = flightSearch.map(
+      ({
+        id,
+        originLocationCode,
+        destinationLocationCode,
+        departureDateTimeRange,
+      }) => ({
+        id,
+        originLocationCode,
+        destinationLocationCode,
+        departureDateTimeRange: flexibleDate
+          ? { date: departureDateTimeRange, dateWindow: flexibleDate }
+          : { date: departureDateTimeRange },
+      })
+    );
 
-    for (let i = 0; i < passenger.adults; i++) {
-      let num = i;
-      num++;
-      FlightSearch.travelers[i] = {
-        id: num,
-        travelerType: "ADULT",
-        fareOptions: ["STANDARD"],
-      };
-    }
-    let formaTI = FlightSearch.travelers.length;
-    for (let i = 0; i < passenger.children; i++) {
-      let num = i;
-      num++;
+    const buildTravelers = ({ adults = 0, children = 0, infants = 0 }) => {
+      let idCounter = 1;
+      const create = (count, travelerType, extra = {}) =>
+        Array.from({ length: count }, () => ({
+          id: idCounter++,
+          travelerType,
+          fareOptions: ["STANDARD"],
+          ...extra,
+        }));
 
-      let index = formaTI + i;
-      let indexId = formaTI + num;
+      return [
+        ...create(adults, "ADULT"),
+        ...create(children, "CHILD"),
+        ...create(infants, "HELD_INFANT", { associatedAdultId: 1 }),
+      ];
+    };
 
-      FlightSearch.travelers[index] = {
-        id: indexId,
-        travelerType: "CHILD",
-        fareOptions: ["STANDARD"],
-      };
-    }
-    let formaTi = FlightSearch.travelers.length;
-    for (let i = 0; i < passenger.infants; i++) {
-      let num = i;
-      num++;
-
-      let index = formaTi + i;
-      let indexId = formaTi + num;
-
-      FlightSearch.travelers[index] = {
-        id: indexId,
-        travelerType: "HELD_INFANT",
-        fareOptions: ["STANDARD"],
-        associatedAdultId: 1,
-      };
-    }
+    FlightSearch.travelers = buildTravelers(passenger);
     // Only validate return date for round trips
     if (flightSearch.length > 1 && flightSearch[1]?.departureDateTimeRange) {
       const firstDeparture = new Date(flightSearch[0].departureDateTimeRange);
