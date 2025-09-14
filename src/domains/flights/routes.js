@@ -23,6 +23,82 @@ setInterval(refreshAccessToken, 28 * 60 * 1000); // 1680000 ms
 const { flightOffers, multiCityFlight } = require("./controller");
 const router = express.Router();
 
+// Helper to validate request payload for flight offers search
+function validateFlightOffersSearchInput(body) {
+  const errors = [];
+  if (!body || typeof body !== "object") {
+    errors.push("Request body must be an object");
+  }
+
+  const { passenger, flightSearch, flexible } = body || {};
+
+  if (!passenger || typeof passenger !== "object") {
+    errors.push("passenger is required");
+  } else {
+    if (typeof passenger.adults !== "number" || passenger.adults < 1)
+      errors.push("passenger.adults must be a positive number");
+    if (
+      typeof passenger.children !== "number" ||
+      passenger.children < 0
+    )
+      errors.push("passenger.children must be a non-negative number");
+    if (typeof passenger.infants !== "number" || passenger.infants < 0)
+      errors.push("passenger.infants must be a non-negative number");
+    if (
+      !passenger.travelClass ||
+      typeof passenger.travelClass !== "string" ||
+      passenger.travelClass.trim() === ""
+    )
+      errors.push("passenger.travelClass is required");
+  }
+
+  if (!Array.isArray(flightSearch) || flightSearch.length === 0) {
+    errors.push("flightSearch must be a non-empty array");
+  } else {
+    flightSearch.forEach((fs, idx) => {
+      if (!fs.id || typeof fs.id !== "string" || fs.id.trim() === "")
+        errors.push(`flightSearch[${idx}].id is required`);
+      if (
+        !fs.originLocationCode ||
+        typeof fs.originLocationCode !== "string" ||
+        fs.originLocationCode.trim() === ""
+      )
+        errors.push(`flightSearch[${idx}].originLocationCode is required`);
+      if (
+        !fs.destinationLocationCode ||
+        typeof fs.destinationLocationCode !== "string" ||
+        fs.destinationLocationCode.trim() === ""
+      )
+        errors.push(`flightSearch[${idx}].destinationLocationCode is required`);
+      if (
+        !fs.departureDateTimeRange ||
+        typeof fs.departureDateTimeRange !== "string" ||
+        fs.departureDateTimeRange.trim() === ""
+      )
+        errors.push(`flightSearch[${idx}].departureDateTimeRange is required`);
+    });
+  }
+
+  if (errors.length) {
+    return { error: errors.join(", ") };
+  }
+
+  const sanitizedPassenger = {
+    adults: passenger.adults,
+    children: passenger.children,
+    infants: passenger.infants,
+    travelClass: passenger.travelClass.trim(),
+  };
+  const sanitizedFlightSearch = flightSearch.map((fs) => ({
+    id: fs.id,
+    originLocationCode: fs.originLocationCode.trim(),
+    destinationLocationCode: fs.destinationLocationCode.trim(),
+    departureDateTimeRange: fs.departureDateTimeRange.trim(),
+  }));
+
+  return { value: { passenger: sanitizedPassenger, flightSearch: sanitizedFlightSearch, flexible } };
+}
+
 // Middleware to ensure authentication
 router.use(async (req, res, next) => {
   if (!accessToken)
@@ -95,30 +171,14 @@ router.post("/flightOffersSearch", async (req, res) => {
         },
       },
     };
-    let { passenger, flightSearch, flexible } = req.body;
-    console.log(req.body);
-    let originLocationCode = flightSearch[0].originLocationCode.trim();
-    let destinationLocationCode =
-      flightSearch[0].destinationLocationCode.trim();
-    let departureDate = flightSearch[0].departureDateTimeRange.trim();
-    // returnDate = returnDate.trim();
-    let travelClass = passenger.travelClass.trim();
-    let flexibleDate = flexible;
-    // currencyCode = currencyCode.trim();
-    console.log(accessToken);
-    if (
-      !(
-        originLocationCode &&
-        destinationLocationCode &&
-        passenger.adults &&
-        travelClass &&
-        // currencyCode &&
-        departureDate
-      )
-    ) {
-      console.log("here =>>", req.body);
-      throw Error("Empty Flight_Offers_Search input fields!");
+    const { error, value } = validateFlightOffersSearchInput(req.body);
+    if (error) {
+      return res.status(400).json({ error });
     }
+    let { passenger, flightSearch, flexible } = value;
+    let flexibleDate = flexible;
+    console.log(value);
+    console.log(accessToken);
 
     for (let i = 0; i < flightSearch.length; i++) {
       FlightSearch.searchCriteria.flightFilters.cabinRestrictions[i] = {
