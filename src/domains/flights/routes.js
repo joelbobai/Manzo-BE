@@ -30,7 +30,7 @@ function validateFlightOffersSearchInput(body) {
     errors.push("Request body must be an object");
   }
 
-  const { passenger, flightSearch, flexible } = body || {};
+  const { passenger, flightSearch, flexible, currencyCode } = body || {};
 
   if (!passenger || typeof passenger !== "object") {
     errors.push("passenger is required");
@@ -80,6 +80,15 @@ function validateFlightOffersSearchInput(body) {
     });
   }
 
+  let sanitizedCurrencyCode = "NGN";
+  if (currencyCode !== undefined) {
+    if (typeof currencyCode !== "string" || currencyCode.trim() === "") {
+      errors.push("currencyCode must be a non-empty string");
+    } else {
+      sanitizedCurrencyCode = currencyCode.trim().toUpperCase();
+    }
+  }
+
   if (errors.length) {
     return { error: errors.join(", ") };
   }
@@ -102,6 +111,7 @@ function validateFlightOffersSearchInput(body) {
       passenger: sanitizedPassenger,
       flightSearch: sanitizedFlightSearch,
       flexible,
+      currencyCode: sanitizedCurrencyCode,
     },
   };
 }
@@ -182,10 +192,12 @@ router.post("/flightOffersSearch", async (req, res) => {
     if (error) {
       return res.status(400).json({ error });
     }
-    let { passenger, flightSearch, flexible } = value;
+    let { passenger, flightSearch, flexible, currencyCode } = value;
     let flexibleDate = flexible;
     console.log(value);
     console.log(accessToken);
+
+    FlightSearch.currencyCode = currencyCode;
 
     FlightSearch.searchCriteria.flightFilters.cabinRestrictions =
       flightSearch.map(({ id }) => ({
@@ -286,12 +298,26 @@ router.post("/flightOffersSearchMultiCity", async (req, res) => {
         },
       },
     };
-    const { flightSearch, passenger } = req.body;
-    console.log(flightSearch, passenger);
+    const { flightSearch, passenger, currencyCode } = req.body;
+    console.log(flightSearch, passenger, currencyCode);
 
     if (!flightSearch) {
       return res.status(400).send("Empty input fields!");
     }
+
+    if (
+      currencyCode !== undefined &&
+      (typeof currencyCode !== "string" || currencyCode.trim() === "")
+    ) {
+      return res
+        .status(400)
+        .send("currencyCode must be provided as a non-empty string!");
+    }
+
+    const sanitizedCurrencyCode =
+      typeof currencyCode === "string" && currencyCode.trim() !== ""
+        ? currencyCode.trim().toUpperCase()
+        : "NGN";
 
     for (let i = 0; i < flightSearch.length; i++) {
       id = flightSearch[i].id;
@@ -370,6 +396,8 @@ router.post("/flightOffersSearchMultiCity", async (req, res) => {
         associatedAdultId: 1,
       };
     }
+
+    multiCityFlightSearch.currencyCode = sanitizedCurrencyCode;
 
     let multiCityFlightResults = await multiCityFlight([
       multiCityFlightSearch,
