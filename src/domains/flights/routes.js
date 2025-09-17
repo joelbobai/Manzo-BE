@@ -37,10 +37,7 @@ function validateFlightOffersSearchInput(body) {
   } else {
     if (typeof passenger.adults !== "number" || passenger.adults < 1)
       errors.push("passenger.adults must be a positive number");
-    if (
-      typeof passenger.children !== "number" ||
-      passenger.children < 0
-    )
+    if (typeof passenger.children !== "number" || passenger.children < 0)
       errors.push("passenger.children must be a non-negative number");
     if (typeof passenger.infants !== "number" || passenger.infants < 0)
       errors.push("passenger.infants must be a non-negative number");
@@ -56,7 +53,11 @@ function validateFlightOffersSearchInput(body) {
     errors.push("flightSearch must be a non-empty array");
   } else {
     flightSearch.forEach((fs, idx) => {
-      if (!fs.id || typeof fs.id !== "string" || fs.id.trim() === "")
+      if (
+        !fs.id ||
+        typeof String(fs.id) !== "string" ||
+        String(fs.id).trim() === ""
+      )
         errors.push(`flightSearch[${idx}].id is required`);
       if (
         !fs.originLocationCode ||
@@ -96,7 +97,13 @@ function validateFlightOffersSearchInput(body) {
     departureDateTimeRange: fs.departureDateTimeRange.trim(),
   }));
 
-  return { value: { passenger: sanitizedPassenger, flightSearch: sanitizedFlightSearch, flexible } };
+  return {
+    value: {
+      passenger: sanitizedPassenger,
+      flightSearch: sanitizedFlightSearch,
+      flexible,
+    },
+  };
 }
 
 // Middleware to ensure authentication
@@ -180,13 +187,12 @@ router.post("/flightOffersSearch", async (req, res) => {
     console.log(value);
     console.log(accessToken);
 
-    FlightSearch.searchCriteria.flightFilters.cabinRestrictions = flightSearch.map(
-      ({ id }) => ({
+    FlightSearch.searchCriteria.flightFilters.cabinRestrictions =
+      flightSearch.map(({ id }) => ({
         cabin: passenger.travelClass,
         coverage: "MOST_SEGMENTS",
         originDestinationIds: [id],
-      })
-    );
+      }));
 
     FlightSearch.originDestinations = flightSearch.map(
       ({
@@ -225,9 +231,7 @@ router.post("/flightOffersSearch", async (req, res) => {
     // Only validate return date for round trips
     if (flightSearch.length > 1 && flightSearch[1]?.departureDateTimeRange) {
       const firstDeparture = new Date(flightSearch[0].departureDateTimeRange);
-      const secondDeparture = new Date(
-        flightSearch[1].departureDateTimeRange
-      );
+      const secondDeparture = new Date(flightSearch[1].departureDateTimeRange);
       if (secondDeparture < firstDeparture) {
         throw new Error(
           "Return flight date must be after outbound flight date."
@@ -240,6 +244,7 @@ router.post("/flightOffersSearch", async (req, res) => {
     console.log(FlightSearch.searchCriteria.flightFilters.cabinRestrictions);
     let flightResults = await flightOffers([FlightSearch, accessToken]);
     // console.log(flightResults);
+
     res.status(200).json({
       flightRights: flightResults.data,
       flightRightsDictionaries: flightResults.dictionaries,
