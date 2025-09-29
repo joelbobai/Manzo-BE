@@ -2,6 +2,11 @@ const express = require("express");
 const FlightBooking = require("./model");
 const mongoose = require("mongoose");
 const { getAccessToken } = require("../../config/amadeus");
+const {
+  flightOffers,
+  multiCityFlight,
+  flightOffersPricing,
+} = require("./controller");
 const AMADEUS_API_URL = "https://test.travel.api.amadeus.com/v2";
 
 let accessToken;
@@ -20,7 +25,6 @@ refreshAccessToken();
 // Set interval to refresh token every 28 minutes
 setInterval(refreshAccessToken, 28 * 60 * 1000); // 1680000 ms
 
-const { flightOffers, multiCityFlight } = require("./controller");
 const router = express.Router();
 
 // Helper to validate request payload for flight offers search
@@ -263,6 +267,33 @@ router.post("/flightOffersSearch", async (req, res) => {
     });
   } catch (error) {
     console.error("Error sending from flightOffersSearch:", error);
+    res.sendStatus(500);
+  }
+});
+
+// Flight Offers Price Lookup => Flight Search for the Price
+router.post("/flightPriceLookup", async (req, res) => {
+  try {
+    const { flight } = req.body;
+    if (!flight) {
+      return res.status(400).send("Empty input fields!");
+    }
+    if (Object.keys(flight).length === 0) {
+      return res.status(400).send("Empty input fields!");
+    }
+
+    let priceLookup = JSON.stringify({
+      data: {
+        type: "flight-offers-pricing",
+        flightOffers: [flight],
+      },
+    });
+
+    let PricingResults = await flightOffersPricing([priceLookup, accessToken]);
+    console.log(PricingResults);
+    res.status(200).json(PricingResults);
+  } catch (error) {
+    console.error("Error sending Price Lookup:", error);
     res.sendStatus(500);
   }
 });
