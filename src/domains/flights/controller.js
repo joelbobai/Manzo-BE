@@ -3,67 +3,66 @@ const crypto = require("crypto");
 
 const { AMA_API_KEY, NODE_ENV } = process.env;
 
-let Domain =
+const AMADEUS_DOMAIN =
   NODE_ENV === "development"
     ? "https://test.travel.api.amadeus.com"
     : "https://travel.api.amadeus.com";
 
+const AMADEUS_HEADERS = {
+  "Content-Type": "application/vnd.amadeus+json",
+};
+
 const generateAmaClientRef = () => crypto.randomBytes(8).toString("hex");
 
-const requestFlightOffers = async (flightSearch, clientRef) => {
-  try {
-    const response = await axios.post(
-      `${Domain}/v2/shopping/flight-offers`,
-      JSON.stringify(flightSearch[0]),
-      {
-        headers: {
-          "Content-Type": "application/vnd.amadeus+json",
-          "ama-client-ref": clientRef,
-          Authorization: `Bearer ${flightSearch[1]}`,
-        },
-      }
-    );
-
-    console.log({
-      flightRights: response?.data,
-      flightRightsDictionaries: response?.dictionaries,
-    });
-    return response?.data;
-  } catch (err) {
-    console.log("error", err?.response?.data?.errors);
-    throw err;
-  }
+const logAmadeusError = (endpoint, error) => {
+  const amadeusErrors = error?.response?.data?.errors;
+  console.error(
+    `Amadeus request failed for ${endpoint}:`,
+    amadeusErrors || error.message
+  );
 };
-const flightOffersPricing = async (flightOffers) => {
+
+const postToAmadeus = async ({ endpoint, payload, token, clientRef }) => {
   try {
-    console.log("flightOffers", flightOffers[1]);
-    const response = await axios.post(
-      `${Domain}/v1/shopping/flight-offers/pricing?include=detailed-fare-rules,bags`,
-      flightOffers[0],
-      {
-        headers: {
-          "Content-Type": "application/vnd.amadeus+json",
-          "ama-client-ref": AMA_API_KEY,
-          Authorization: `Bearer ${flightOffers[1]}`,
-        },
-      }
-    );
-    console.log({
-      flightRights: response?.data,
-      flightRightsDictionaries: response?.dictionaries,
+    const { data } = await axios.post(`${AMADEUS_DOMAIN}${endpoint}`, payload, {
+      headers: {
+        ...AMADEUS_HEADERS,
+        "ama-client-ref": clientRef,
+        Authorization: `Bearer ${token}`,
+      },
     });
-    return response?.data;
-  } catch (err) {
-    console.log("error flight-offers-pricing", err?.response?.data?.errors);
-    throw err;
+
+    return data;
+  } catch (error) {
+    logAmadeusError(endpoint, error);
+    throw error;
   }
 };
 
-const flightOffers = (flightSearch) =>
-  requestFlightOffers(flightSearch, generateAmaClientRef());
+const flightOffers = ({ payload, token }) =>
+  postToAmadeus({
+    endpoint: "/v2/shopping/flight-offers",
+    payload,
+    token,
+    clientRef: generateAmaClientRef(),
+  });
 
-const multiCityFlight = (flightSearch) =>
-  requestFlightOffers(flightSearch, AMA_API_KEY);
+const multiCityFlight = ({ payload, token }) =>
+  postToAmadeus({
+    endpoint: "/v2/shopping/flight-offers",
+    payload,
+    token,
+    clientRef: AMA_API_KEY,
+  });
+
+const flightOffersPricing = ({ payload, token }) =>
+  postToAmadeus({
+    endpoint:
+      "/v1/shopping/flight-offers/pricing?include=detailed-fare-rules,bags",
+    payload,
+    token,
+    clientRef: AMA_API_KEY,
+  });
 
 module.exports = {
   multiCityFlight,

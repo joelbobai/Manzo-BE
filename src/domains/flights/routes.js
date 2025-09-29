@@ -7,23 +7,45 @@ const {
   multiCityFlight,
   flightOffersPricing,
 } = require("./controller");
-const AMADEUS_API_URL = "https://test.travel.api.amadeus.com/v2";
 
 let accessToken;
+let accessTokenPromise;
 
-// Refresh access token every 28 minutes (1680000 milliseconds)
-async function refreshAccessToken() {
-  await getAccessToken().then((value) => {
-    accessToken = value;
+const TOKEN_REFRESH_INTERVAL_MS = 28 * 60 * 1000;
+
+const refreshAccessToken = async () => {
+  try {
+    accessToken = await getAccessToken();
+    return accessToken;
+  } catch (error) {
+    console.error("Failed to refresh access token", error);
+    throw error;
+  }
+};
+
+const ensureAccessToken = async () => {
+  if (accessToken) {
+    return accessToken;
+  }
+
+  if (!accessTokenPromise) {
+    accessTokenPromise = refreshAccessToken().finally(() => {
+      accessTokenPromise = null;
+    });
+  }
+
+  return accessTokenPromise;
+};
+
+refreshAccessToken().catch(() => {
+  // Failure is logged in refreshAccessToken. Subsequent requests will retry.
+});
+
+setInterval(() => {
+  refreshAccessToken().catch(() => {
+    // Failure is logged above; keep attempting refresh silently.
   });
-  console.log("Access token refreshed:", accessToken);
-}
-
-// Initial token fetch on server start
-refreshAccessToken();
-
-// Set interval to refresh token every 28 minutes
-setInterval(refreshAccessToken, 28 * 60 * 1000); // 1680000 ms
+}, TOKEN_REFRESH_INTERVAL_MS);
 
 const router = express.Router();
 
@@ -122,10 +144,16 @@ function validateFlightOffersSearchInput(body) {
 
 // Middleware to ensure authentication
 router.use(async (req, res, next) => {
-  if (!accessToken)
-    await getAccessToken().then((value) => {
-      accessToken = value;
-    });
+  try {
+    await ensureAccessToken();
+  } catch (error) {
+    return res.status(503).json({ error: "Unable to obtain access token" });
+  }
+
+  if (!accessToken) {
+    return res.status(503).json({ error: "Unable to obtain access token" });
+  }
+
   next();
 });
 
@@ -199,7 +227,6 @@ router.post("/flightOffersSearch", async (req, res) => {
     let { passenger, flightSearch, flexible, currencyCode } = value;
     let flexibleDate = flexible;
     console.log(value);
-    console.log(accessToken);
 
     FlightSearch.currencyCode = currencyCode;
 
@@ -249,16 +276,21 @@ router.post("/flightOffersSearch", async (req, res) => {
       const firstDeparture = new Date(flightSearch[0].departureDateTimeRange);
       const secondDeparture = new Date(flightSearch[1].departureDateTimeRange);
       if (secondDeparture < firstDeparture) {
-        throw new Error(
-          "Return flight date must be after outbound flight date."
-        );
+        return res
+          .status(400)
+          .json({
+            error: "Return flight date must be after outbound flight date.",
+          });
       }
     }
 
     // console.log(FlightSearch.travelers.length);
     console.log(FlightSearch);
     console.log(FlightSearch.searchCriteria.flightFilters.cabinRestrictions);
-    let flightResults = await flightOffers([FlightSearch, accessToken]);
+    const flightResults = await flightOffers({
+      payload: FlightSearch,
+      token: accessToken,
+    });
     // console.log(flightResults);
 
     res.status(200).json({
@@ -267,7 +299,7 @@ router.post("/flightOffersSearch", async (req, res) => {
     });
   } catch (error) {
     console.error("Error sending from flightOffersSearch:", error);
-    res.sendStatus(500);
+    res.status(500).json({ error: "Unable to fetch flight offers" });
   }
 });
 
@@ -282,15 +314,17 @@ router.post("/flightPriceLookup", async (req, res) => {
       return res.status(400).send("Empty input fields!");
     }
 
-    let priceLookup = JSON.stringify({
+    const priceLookup = {
       data: {
         type: "flight-offers-pricing",
         flightOffers: [flight],
       },
-    });
+    };
 
-    let PricingResults = await flightOffersPricing([priceLookup, accessToken]);
-    console.log(PricingResults);
+    const PricingResults = await flightOffersPricing({
+      payload: priceLookup,
+      token: accessToken,
+    });
     res.status(200).json(PricingResults);
   } catch (error) {
     console.error("Error sending Price Lookup:", error);
@@ -332,8 +366,37 @@ router.post("/flightOffersSearchMultiCity", async (req, res) => {
     const { flightSearch, passenger, currencyCode } = req.body;
     console.log(flightSearch, passenger, currencyCode);
 
-    if (!flightSearch) {
-      return res.status(400).send("Empty input fields!");
+    if (!Array.isArray(flightSearch) || flightSearch.length === 0) {
+      return res.status(400).json({
+        error: "flightSearch must be a non-empty array",
+      });
+    }
+
+    if (!passenger || typeof passenger !== "object") {
+      return res.status(400).json({ error: "passenger details are required" });
+    }
+
+    const passengerCounts = {
+      adults: passenger.adults,
+      children: passenger.children,
+      infants: passenger.infants,
+    };
+
+    const invalidPassengerField = Object.entries(passengerCounts).find(
+      ([key, value]) => !Number.isInteger(value) || value < 0
+    );
+
+    if (invalidPassengerField) {
+      const [field] = invalidPassengerField;
+      return res.status(400).json({
+        error: `${field} must be provided as a non-negative integer`,
+      });
+    }
+
+    if (passengerCounts.adults < 1) {
+      return res
+        .status(400)
+        .json({ error: "adults must be provided and at least 1" });
     }
 
     if (
@@ -350,95 +413,92 @@ router.post("/flightOffersSearchMultiCity", async (req, res) => {
         ? currencyCode.trim().toUpperCase()
         : "NGN";
 
-    for (let i = 0; i < flightSearch.length; i++) {
-      id = flightSearch[i].id;
-      originLocationCode = flightSearch[i].originLocationCode.trim();
-      destinationLocationCode = flightSearch[i].destinationLocationCode.trim();
-      departureDateTimeRange = flightSearch[i].departureDate.trim();
+    const sanitizedSegments = flightSearch.map((segment, index) => {
+      const {
+        id,
+        originLocationCode,
+        destinationLocationCode,
+        departureDate,
+        tripClass,
+      } = segment || {};
 
       if (
-        !(
-          (
-            id &&
-            originLocationCode &&
-            destinationLocationCode &&
-            departureDateTimeRange
-          )
-          // &&
-          // infants &&
-          // travelClass &&
-          // currencyCode &&
-          // departureDate
-        )
+        !id ||
+        !originLocationCode ||
+        !destinationLocationCode ||
+        !departureDate
       ) {
-        throw Error("Empty Flight_Offers_Search_multiCity input fields!");
+        throw new Error(
+          `Empty Flight_Offers_Search_multiCity input fields at index ${index}!`
+        );
       }
-      multiCityFlightSearch.originDestinations[i] = {
-        id: flightSearch[i].id,
-        originLocationCode: flightSearch[i].originLocationCode,
-        destinationLocationCode: flightSearch[i].destinationLocationCode,
+
+      return {
+        id,
+        originLocationCode: originLocationCode.trim(),
+        destinationLocationCode: destinationLocationCode.trim(),
+        departureDate: departureDate.trim(),
+        tripClass: typeof tripClass === "string" ? tripClass.trim() : undefined,
+      };
+    });
+
+    sanitizedSegments.forEach((segment, index) => {
+      multiCityFlightSearch.originDestinations[index] = {
+        id: segment.id,
+        originLocationCode: segment.originLocationCode,
+        destinationLocationCode: segment.destinationLocationCode,
         departureDateTimeRange: {
-          date: flightSearch[i].departureDate,
+          date: segment.departureDate,
         },
       };
-    }
-    for (let i = 0; i < flightSearch.length; i++) {
-      multiCityFlightSearch.flightFilters.cabinRestrictions[i] = {
-        cabin: flightSearch[i]?.tripClass,
+
+      multiCityFlightSearch.flightFilters.cabinRestrictions[index] = {
+        cabin: segment.tripClass,
         coverage: "MOST_SEGMENTS",
-        originDestinationIds: [flightSearch[i].id],
+        originDestinationIds: [segment.id],
       };
-    }
-    for (let i = 0; i < passenger.adults; i++) {
-      let num = i;
-      num++;
-      multiCityFlightSearch.travelers[i] = {
-        id: num,
-        travelerType: "ADULT",
-        fareOptions: ["STANDARD"],
+    });
+
+    const buildTravelersList = ({ adults = 0, children = 0, infants = 0 }) => {
+      const travelers = [];
+
+      const createTravelers = (count, travelerType, extra = {}) => {
+        for (let index = 0; index < count; index += 1) {
+          travelers.push({
+            id: travelers.length + 1,
+            travelerType,
+            fareOptions: ["STANDARD"],
+            ...extra,
+          });
+        }
       };
-    }
-    let formaTI = multiCityFlightSearch.travelers.length;
-    for (let i = 0; i < passenger.children; i++) {
-      let num = i;
-      num++;
 
-      let index = formaTI + i;
-      let indexId = formaTI + num;
+      createTravelers(adults, "ADULT");
+      createTravelers(children, "CHILD");
+      createTravelers(infants, "HELD_INFANT", { associatedAdultId: 1 });
 
-      multiCityFlightSearch.travelers[index] = {
-        id: indexId,
-        travelerType: "CHILD",
-        fareOptions: ["STANDARD"],
-      };
-    }
-    let formaTi = multiCityFlightSearch.travelers.length;
-    for (let i = 0; i < passenger.infants; i++) {
-      let num = i;
-      num++;
+      return travelers;
+    };
 
-      let index = formaTi + i;
-      let indexId = formaTi + num;
-
-      multiCityFlightSearch.travelers[index] = {
-        id: indexId,
-        travelerType: "HELD_INFANT",
-        fareOptions: ["STANDARD"],
-        associatedAdultId: 1,
-      };
-    }
-
+    multiCityFlightSearch.travelers = buildTravelersList(passengerCounts);
     multiCityFlightSearch.currencyCode = sanitizedCurrencyCode;
 
-    let multiCityFlightResults = await multiCityFlight([
-      multiCityFlightSearch,
-      accessToken,
-    ]);
-    // console.log(multiCityFlightResults);
+    const multiCityFlightResults = await multiCityFlight({
+      payload: multiCityFlightSearch,
+      token: accessToken,
+    });
+
     res.status(200).json(multiCityFlightResults);
   } catch (error) {
     console.error("Error sending Flight Offers Search MultiCity:", error);
-    res.sendStatus(500);
+    if (
+      typeof error?.message === "string" &&
+      error.message.includes("Flight_Offers_Search_multiCity")
+    ) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.status(500).json({ error: "Unable to process multi-city search" });
   }
 });
 
