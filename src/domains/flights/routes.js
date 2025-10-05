@@ -2,6 +2,8 @@ const express = require("express");
 const FlightBooking = require("./model");
 const mongoose = require("mongoose");
 const { getAccessToken } = require("../../config/amadeus");
+const { SECRET_KEY } = process.env;
+const CryptoJS = require("crypto-js");
 const {
   flightOffers,
   multiCityFlight,
@@ -513,11 +515,11 @@ router.post("/flightOffersSearchMultiCity", async (req, res) => {
 });
 
 // Flight Create Orders => Flight Booking
-router.post("/flightCreateOrders", async (req, res) => {
+router.post("/issueTicket", async (req, res) => {
   try {
     let Travelers = [];
-    let travelerId = 1; // Unique traveler ID counter
     let { hashedData } = req.body;
+    // console.log("hashedData", hashedData);
     const calculatedHash = CryptoJS.AES.decrypt(hashedData, SECRET_KEY);
     let decryptedData = JSON.parse(calculatedHash.toString(CryptoJS.enc.Utf8));
     let { flight, travelers, transactionReference, littelFlightInfo } =
@@ -540,36 +542,7 @@ router.post("/flightCreateOrders", async (req, res) => {
     if (Object.keys(flight).length === 0) {
       return res.status(400).send("Empty flight Create Orders input fields!");
     }
-    const mapTravelers = (data) => {
-      if (!Array.isArray(data)) return []; // Ensure it's an array before mapping
-
-      return data.map((traveler) => ({
-        id: travelerId++,
-        dateOfBirth: traveler.dob,
-        name: {
-          firstName: traveler.firstName,
-          middleName: traveler?.middleName ? traveler?.middleName : "",
-          lastName: traveler.lastName,
-        },
-        gender: traveler.gender ? traveler.gender.toUpperCase() : "UNKNOWN",
-        contact: {
-          emailAddress: traveler.email,
-          phones: [
-            {
-              deviceType: "MOBILE",
-              countryCallingCode: traveler.selectedCountryValue || "N/A", // Ensure a valid value
-              number: traveler.phone || "0000000000",
-            },
-          ],
-        },
-      }));
-    };
-
-    await Travelers.push(...mapTravelers(travelers.AdultData || []));
-
-    await Travelers.push(...mapTravelers(travelers.ChildrenData || []));
-
-    await Travelers.push(...mapTravelers(travelers.InfantData || []));
+    Travelers = travelers;
 
     const booked = await flightBooking({
       transactionReference,
@@ -578,8 +551,8 @@ router.post("/flightCreateOrders", async (req, res) => {
       littelFlightInfo,
       accessToken,
     });
-
-    res.status(200).json(booked);
+    console.log("booked", booked?.FlightBooked?.id);
+    res.status(200).json({ issueId: booked?.FlightBooked?.id });
   } catch (error) {
     console.error("Error sending booking:1", error);
     console.error("Error sending boooking:2", error?.response?.data?.errors);
