@@ -32,7 +32,7 @@ const data = new URLSearchParams({
   USAP: USAP,
   Authorization: `Bearer ${BEARER_KEY}`,
 });
-
+console.log(tokenUrl);
 const getAccessToken = async () => {
   try {
     const response = await axios.post(tokenUrl, data.toString(), {

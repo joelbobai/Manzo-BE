@@ -5,6 +5,7 @@ const { getAccessToken } = require("../../config/amadeus");
 const {
   flightOffers,
   multiCityFlight,
+  flightBooking,
   flightOffersPricing,
 } = require("./controller");
 
@@ -276,11 +277,9 @@ router.post("/flightOffersSearch", async (req, res) => {
       const firstDeparture = new Date(flightSearch[0].departureDateTimeRange);
       const secondDeparture = new Date(flightSearch[1].departureDateTimeRange);
       if (secondDeparture < firstDeparture) {
-        return res
-          .status(400)
-          .json({
-            error: "Return flight date must be after outbound flight date.",
-          });
+        return res.status(400).json({
+          error: "Return flight date must be after outbound flight date.",
+        });
       }
     }
 
@@ -291,7 +290,10 @@ router.post("/flightOffersSearch", async (req, res) => {
       payload: FlightSearch,
       token: accessToken,
     });
-    // console.log(flightResults);
+    console.log({
+      flightRights: flightResults.data,
+      flightRightsDictionaries: flightResults.dictionaries,
+    });
 
     res.status(200).json({
       flightRights: flightResults.data,
@@ -320,11 +322,13 @@ router.post("/flightPriceLookup", async (req, res) => {
         flightOffers: [flight],
       },
     };
+    console.log("Price Lookup Payload:", priceLookup);
 
     const PricingResults = await flightOffersPricing({
       payload: priceLookup,
       token: accessToken,
     });
+    console.log("Pricing Results:", PricingResults);
     res.status(200).json(PricingResults);
   } catch (error) {
     console.error("Error sending Price Lookup:", error);
@@ -487,8 +491,14 @@ router.post("/flightOffersSearchMultiCity", async (req, res) => {
       payload: multiCityFlightSearch,
       token: accessToken,
     });
-
-    res.status(200).json(multiCityFlightResults);
+    console.log({
+      flightRights: multiCityFlightResults.data,
+      flightRightsDictionaries: multiCityFlightResults.dictionaries,
+    });
+    res.status(200).json({
+      flightRights: multiCityFlightResults.data,
+      flightRightsDictionaries: multiCityFlightResults.dictionaries,
+    });
   } catch (error) {
     console.error("Error sending Flight Offers Search MultiCity:", error);
     if (
@@ -499,6 +509,81 @@ router.post("/flightOffersSearchMultiCity", async (req, res) => {
     }
 
     res.status(500).json({ error: "Unable to process multi-city search" });
+  }
+});
+
+// Flight Create Orders => Flight Booking
+router.post("/flightCreateOrders", async (req, res) => {
+  try {
+    let Travelers = [];
+    let travelerId = 1; // Unique traveler ID counter
+    let { hashedData } = req.body;
+    const calculatedHash = CryptoJS.AES.decrypt(hashedData, SECRET_KEY);
+    let decryptedData = JSON.parse(calculatedHash.toString(CryptoJS.enc.Utf8));
+    let { flight, travelers, transactionReference, littelFlightInfo } =
+      decryptedData;
+    transactionReference = transactionReference.trim();
+    // console.log("jjjjjj", decryptedData);
+
+    if (!transactionReference) {
+      return res.status(400).send("Empty transaction Referenc input fields!");
+    }
+    if (!littelFlightInfo) {
+      return res.status(400).send("Empty flight Create Orders input fields!");
+    }
+    if (!flight) {
+      return res.status(400).send("Empty flight Create Orders input fields!");
+    }
+    if (!travelers) {
+      return res.status(400).send("Empty travelers input fields!");
+    }
+    if (Object.keys(flight).length === 0) {
+      return res.status(400).send("Empty flight Create Orders input fields!");
+    }
+    const mapTravelers = (data) => {
+      if (!Array.isArray(data)) return []; // Ensure it's an array before mapping
+
+      return data.map((traveler) => ({
+        id: travelerId++,
+        dateOfBirth: traveler.dob,
+        name: {
+          firstName: traveler.firstName,
+          middleName: traveler?.middleName ? traveler?.middleName : "",
+          lastName: traveler.lastName,
+        },
+        gender: traveler.gender ? traveler.gender.toUpperCase() : "UNKNOWN",
+        contact: {
+          emailAddress: traveler.email,
+          phones: [
+            {
+              deviceType: "MOBILE",
+              countryCallingCode: traveler.selectedCountryValue || "N/A", // Ensure a valid value
+              number: traveler.phone || "0000000000",
+            },
+          ],
+        },
+      }));
+    };
+
+    await Travelers.push(...mapTravelers(travelers.AdultData || []));
+
+    await Travelers.push(...mapTravelers(travelers.ChildrenData || []));
+
+    await Travelers.push(...mapTravelers(travelers.InfantData || []));
+
+    const booked = await flightBooking({
+      transactionReference,
+      Travelers,
+      flight,
+      littelFlightInfo,
+      accessToken,
+    });
+
+    res.status(200).json(booked);
+  } catch (error) {
+    console.error("Error sending booking:1", error);
+    console.error("Error sending boooking:2", error?.response?.data?.errors);
+    res.sendStatus(500);
   }
 });
 

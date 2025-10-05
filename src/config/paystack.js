@@ -4,7 +4,8 @@ const https = require("https");
 require("dotenv").config();
 
 // url
-const { PAYSTACK_SECRET, SECRET_KEY } = process.env;
+const { NODE_ENV, PAYSTACK_SECRET_TEST_KEY, PAYSTACK_SECRET_LIVE_KEY } =
+  process.env;
 
 const paystackInitializePaymentLink = async (info) => {
   try {
@@ -15,7 +16,11 @@ const paystackInitializePaymentLink = async (info) => {
         path: "/transaction/initialize",
         method: "POST",
         headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET}`,
+          Authorization: `Bearer ${
+            NODE_ENV === "development"
+              ? PAYSTACK_SECRET_TEST_KEY
+              : PAYSTACK_SECRET_LIVE_KEY
+          }`,
           "Content-Type": "application/json",
         },
       };
@@ -65,7 +70,11 @@ const paystackVerifyTransaction = async (reference) => {
         path: `/transaction/verify/${reference}`,
         method: "GET",
         headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET}`,
+          Authorization: `Bearer ${
+            NODE_ENV === "development"
+              ? PAYSTACK_SECRET_TEST_KEY
+              : PAYSTACK_SECRET_LIVE_KEY
+          }`,
         },
       };
 

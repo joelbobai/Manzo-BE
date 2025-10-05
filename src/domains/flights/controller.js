@@ -12,6 +12,58 @@ const AMADEUS_HEADERS = {
   "Content-Type": "application/vnd.amadeus+json",
 };
 
+function getCommission(iataCode) {
+  let commission = 0;
+
+  if (iataCode === "SA") {
+    commission = 9;
+  } else if (iataCode === "UR") {
+    commission = 3;
+  } else if (iataCode === "HR") {
+    commission = 0;
+  } else if (iataCode === "5Z") {
+    commission = 0;
+  } else if (iataCode === "TK") {
+    commission = 0;
+  } else if (iataCode === "HF") {
+    commission = 6;
+  } else if (iataCode === "KQ") {
+    commission = 0;
+  } else if (iataCode === "MS") {
+    commission = 7;
+  } else if (iataCode === "KP") {
+    commission = 6;
+  } else if (iataCode === "WB") {
+    commission = 10;
+  } else if (iataCode === "ET") {
+    commission = 13;
+  } else if (iataCode === "BA") {
+    commission = 12;
+  } else if (iataCode === "AF") {
+    commission = 0;
+  } else if (iataCode === "QR") {
+    commission = 9;
+  } else if (iataCode === "AT") {
+    commission = 6;
+  } else if (iataCode === "AW") {
+    commission = 3;
+  } else if (iataCode === "P4") {
+    commission = 6;
+  } else if (iataCode === "LH") {
+    commission = 0;
+  } else if (iataCode === "DL") {
+    commission = 0;
+  } else if (iataCode === "KL") {
+    commission = 0;
+  } else if (iataCode === "DT") {
+    commission = 6;
+  } else {
+    commission = 0;
+  }
+
+  return commission;
+}
+
 const generateAmaClientRef = () => crypto.randomBytes(8).toString("hex");
 
 const logAmadeusError = (endpoint, error) => {
@@ -64,8 +116,443 @@ const flightOffersPricing = ({ payload, token }) =>
     clientRef: AMA_API_KEY,
   });
 
+const filterIataAirport = (iataCode) => {
+  const newFilterData = IataAirport.find((item) => {
+    return (
+      item.IATA && item.IATA.toLowerCase().includes(iataCode.toLowerCase())
+    );
+  });
+
+  return newFilterData;
+};
+const money = new Intl.NumberFormat("en-us", {
+  currency: "NGN",
+  style: "currency",
+});
+
+const flightIssuance = async (data) => {
+  try {
+    let flight;
+
+    let Html;
+    const response = await axios.post(
+      `${Domain}/v1/booking/flight-orders/${data?.id}/issuance`,
+      {},
+      {
+        headers: {
+          "Content-Type": "application/vnd.amadeus+json",
+          "ama-client-ref": AMA_API_KEY,
+          Authorization: `Bearer ${data?.accessToken}`,
+        },
+      }
+    );
+
+    if (response?.data?.data) {
+      flight = response?.data?.data;
+    }
+
+    const bookingRef = flight.associatedRecords[0].reference;
+    const issueDate = new Date(
+      flight.associatedRecords[1].creationDate
+    ).toDateString();
+    const airlineCode = flight.flightOffers[0].validatingAirlineCodes[0];
+
+    const travelers = flight.travelers
+      .map((traveler) => {
+        const ticket = flight.tickets.find((t) => t.travelerId === traveler.id);
+        return `
+        <p><b>${traveler.name.firstName} ${traveler?.name?.middleName} ${traveler.name.lastName}</b> (${traveler.gender})</p>
+        <p>E-Ticket: <b>${ticket.documentNumber}</b></p>
+        <p>Contact: ${traveler.contact.emailAddress} | +${traveler.contact.phones[0].countryCallingCode} ${traveler.contact.phones[0].number}</p>
+        <hr>`;
+      })
+      .join("");
+    data.dictionaries;
+    const segments = (data) => {
+      let seg = data.segments
+        .map((segment, index) => {
+          return ` <p><b>Flight:</b> ${segment.carrierCode} ${
+            segment.number
+          }</p>
+                <p><b>Departure:</b> <b>(${
+                  segment.departure.iataCode
+                })</b> ${` ${
+            filterIataAirport(segment?.departure?.iataCode)?.Airport_name
+          },  ${
+            filterIataAirport(segment?.departure?.iataCode)?.Location_served
+          }`}  (Terminal ${segment.departure.terminal}) - ${new Date(
+            segment.departure.at
+          ).toLocaleString()}</p>
+                <p><b>Arrival:</b> <b>(${segment.arrival.iataCode})</b> ${`${
+            filterIataAirport(segment?.arrival?.iataCode)?.Airport_name
+          },  ${
+            filterIataAirport(segment?.arrival?.iataCode)?.Location_served
+          }`} (Terminal ${segment.arrival.terminal}) - ${new Date(
+            segment.arrival.at
+          ).toLocaleString()}</p>
+           <p><b>Aircraft:</b> ${segment.aircraft.code}</p>
+                <p><b>Booking Status:</b> ${segment.bookingStatus}</p>
+                <p><b>Stops:</b> ${segment.numberOfStops} (Non-stop flight)</p>
+          `;
+        })
+        .join("");
+      return seg;
+    };
+
+    const flightDetails = flight.flightOffers[0].itineraries
+      .map((itinerary, index) => {
+        // const segment = itinerary.segments[0];
+        return `
+            <section style="background-color: rgba(0, 43, 116, 0.105); padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+                <h3>${index === 0 ? "Departure" : "Return"} Flight</h3>
+               
+                ${segments(itinerary)}
+        
+        
+               
+            </section>
+        `;
+      })
+      .join("");
+
+    Html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Flight Ticket Issuance Confirmation</title>
+    </head>
+    <body style="font-family: Arial, sans-serif;">
+        <div style="width: 100%; max-width: 600px; margin: auto; padding: 20px; background: #f4f4f4; border-radius: 10px;">
+            <header style="background: #ff5900; color: white; padding: 15px; text-align: center; border-radius: 5px;">
+                <h2>Your Flight Ticket Issuance Confirmation</h2>
+            </header>
+
+            <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                <h3>Booking Information</h3>
+                <p><b>Booking Reference:</b> ${bookingRef}</p>
+                <p><b>Issue Date:</b> ${issueDate}</p>
+                <p><b>Validating Airline:</b> ${airlineCode}</p>
+            </section>
+
+            <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                <h3>Traveler & Ticket Details</h3>
+                ${travelers}
+            </section>
+
+            ${flightDetails}
+
+            <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                <h3>Pricing</h3>
+                <p><b>Total Price:</b>  ${money.format(
+                  flight.flightOffers[0].price.grandTotal
+                )}</p>
+            </section>
+
+            <footer style="background: #ddd; padding: 10px; text-align: center; border-radius: 5px; margin-top: 10px;">
+                <p>For any inquiries, please contact <b>Manzo Travels</b> at <a href="mailto:manzotravels@gmail.com">manzotravels@gmail.com</a>.</p>
+                <p>&copy; 2025 Manzo Travels & Tours</p>
+            </footer>
+        </div>
+    </body>
+    </html>`;
+
+    const mailOptions = {
+      from: "Manzo Travels <noreply@manzotravels.com>",
+      to: data?.mails.join(","),
+      subject: "Ticket Issue Confirmation",
+      html: Html,
+    };
+
+    await sendEmailNoReply(mailOptions);
+    return response;
+  } catch (err) {
+    console.log("error flightReserved", err);
+    throw err;
+  }
+};
+const flightReserved = async (data) => {
+  try {
+    let flight;
+    let Html;
+    const response = await axios.post(
+      `${Domain}/v1/booking/flight-orders`,
+      data?.data,
+      {
+        headers: {
+          "Content-Type": "application/vnd.amadeus+json",
+          "ama-client-ref": AMA_API_KEY,
+          Authorization: `Bearer ${data?.accessToken}`,
+        },
+      }
+    );
+
+    if (response?.data?.data) {
+      flight = response?.data?.data;
+    }
+    const bookingRef = flight.associatedRecords[0].reference;
+    const issueDate = new Date(
+      flight.associatedRecords[0].creationDate
+    ).toDateString();
+
+    const travelers = flight.travelers
+      .map(
+        (traveler) => `
+          <p><b>${traveler.name.firstName} ${traveler?.name?.middleName} ${traveler.name.lastName}</b> (${traveler.travelerType})</p>
+          <p>DOB: ${traveler.dateOfBirth}</p>
+          <p>Contact: ${traveler.contact.emailAddress} | +${traveler.contact.phones[0].countryCallingCode} ${traveler.contact.phones[0].number}</p>
+      `
+      )
+      .join("");
+
+    const segments = (data) => {
+      let seg = data.segments
+        .map((segment, index) => {
+          return ` <p><b>Flight:</b> ${segment.carrierCode} ${
+            segment.number
+          }</p>
+                  <p><b>Departure:</b> <b>(${
+                    segment.departure.iataCode
+                  })</b> ${` ${
+            filterIataAirport(segment?.departure?.iataCode)?.Airport_name
+          },  ${
+            filterIataAirport(segment?.departure?.iataCode)?.Location_served
+          }`}  (Terminal ${segment.departure.terminal}) - ${new Date(
+            segment.departure.at
+          ).toLocaleString()}</p>
+                  <p><b>Arrival:</b> <b>(${segment.arrival.iataCode})</b> ${`${
+            filterIataAirport(segment?.arrival?.iataCode)?.Airport_name
+          },  ${
+            filterIataAirport(segment?.arrival?.iataCode)?.Location_served
+          }`} (Terminal ${segment.arrival.terminal}) - ${new Date(
+            segment.arrival.at
+          ).toLocaleString()}</p>
+             <p><b>Aircraft:</b> ${segment.aircraft.code}</p>
+                  
+                  <p><b>Stops:</b> ${
+                    segment.numberOfStops
+                  } (Non-stop flight)</p>
+            `;
+        })
+        .join("");
+      return seg;
+    };
+
+    const flightDetails = flight.flightOffers[0].itineraries
+      .map((itinerary, index) => {
+        const segment = itinerary.segments[0];
+        return `
+              <section style="background-color: rgba(0, 43, 116, 0.105); padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+                  <h3>${index === 0 ? "Departure" : "Return"} Flight</h3>
+                 
+                 ${segments(itinerary)}
+              </section>
+          `;
+      })
+      .join("");
+
+    Html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <title>Flight Booking has been Reserved</title>
+      </head>
+      <body style="font-family: Arial, sans-serif;">
+          <div style="width: 100%; max-width: 600px; margin: auto; padding: 20px; background: #f4f4f4; border-radius: 10px;">
+              <header style="background: #ff5900; color: white; padding: 15px; text-align: center; border-radius: 5px;">
+                  <h2>Your Flight Booking has been Reserved</h2>
+              </header>
+  
+              <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                  <h3>Booking Information</h3>
+                  <p><b>Booking Reference:</b> ${bookingRef}</p>
+                  <p><b>Issue Date:</b> ${issueDate}</p>
+              </section>
+  
+              <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                  <h3>Traveler Details</h3>
+                  ${travelers}
+              </section>
+  
+              ${flightDetails}
+  
+              <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                  <h3>Pricing</h3>
+                  <p><b>Total Price:</b>  ${money.format(
+                    flight.flightOffers[0].price.grandTotal
+                  )}</p>
+              </section>
+  
+              <footer style="background: #ddd; padding: 10px; text-align: center; border-radius: 5px; margin-top: 10px;">
+                  <p>For any inquiries, please contact <b>Manzo Travels</b> at <a href="mailto:manzotravels@gmail.com">manzotravels@gmail.com</a>.</p>
+                  <p>&copy; 2025 Manzo Travels & Tours</p>
+              </footer>
+          </div>
+      </body>
+      </html>
+      `;
+    console.log(data?.mails);
+    const mailOptions = {
+      from: "Manzo Travels <noreply@manzotravels.com>",
+      to: data?.mails.join(","),
+      subject: "Your flight booking has been Reserved",
+      html: Html,
+    };
+
+    await sendEmailNoReply(mailOptions);
+    return response;
+  } catch (err) {
+    console.log("error flightReserved", err);
+    throw err;
+  }
+};
+const flightCommission = async (data) => {
+  try {
+    const response = await axios.patch(
+      `${Domain}/v1/booking/flight-orders/${data?.id}`,
+      data?.data,
+      {
+        headers: {
+          "Content-Type": "application/vnd.amadeus+json",
+          "ama-client-ref": AMA_API_KEY,
+          Authorization: `Bearer ${data?.accessToken}`,
+        },
+      }
+    );
+    return response;
+  } catch (err) {
+    console.log("error flightReserved", err);
+    throw err;
+  }
+};
+
+const flightBooking = async (bookingInput) => {
+  let Issuance;
+  let Book;
+  let mails = ["manzotravels@gmail.com"];
+
+  let percent = await getCommission(
+    bookingInput?.flight?.validatingAirlineCodes[0]
+  );
+  // console.log("percent", percent);
+  try {
+    const verifyTransaction = await paystackVerifyTransaction(
+      bookingInput.transactionReference
+    );
+    let FmCon = JSON.stringify({
+      data: {
+        type: "flight-order",
+        commissions: [
+          {
+            controls: ["MANUAL"],
+            values: [
+              {
+                commissionType: "NEW",
+                percentage: percent,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    let Foffer = JSON.stringify({
+      data: {
+        type: "flight-order",
+        flightOffers: [bookingInput.flight],
+        travelers: bookingInput.Travelers,
+        formOfPayments: [
+          {
+            other: {
+              method: "CASH",
+              flightOfferIds: [bookingInput.flight.id],
+            },
+          },
+        ],
+      },
+    });
+    // checking if transaction already exists
+    const existingTransaction = await FlightBooking.findOne({
+      reference: bookingInput.transactionReference,
+    });
+    if (existingTransaction) {
+      throw Error(
+        "User with the provided Transaction Reference already exists"
+      );
+    }
+    // console.log("here ==>", verifyTransaction.data.gateway_response, req.body);
+    console.log("success", verifyTransaction);
+    console.log("success", verifyTransaction?.data?.status);
+    if (verifyTransaction?.data?.status !== "success") {
+      console.log("Paystack Transaction Failed or Successful");
+      throw Error("Paystack Transaction Failed or Successful");
+    }
+    // console.log("pass verifyTransaction");
+
+    // console.log("pass checking if transaction already exists");
+    for (let i = 0; i < bookingInput?.Travelers?.length; i++) {
+      mails.push(bookingInput?.Travelers[i]?.contact?.emailAddress);
+    }
+
+    console.log(mails);
+
+    let IssuanceData = await flightReserved({
+      data: Foffer,
+      mails: mails,
+      accessToken: bookingInput.accessToken,
+      dictionaries: bookingInput.littelFlightInfo[0]?.dictionaries,
+    })
+      .then(async (result) => {
+        if (result.data.data.id) Book = true;
+        console.log("1", result.data.data.id);
+        const response = await flightCommission({
+          id: result?.data?.data?.id,
+          accessToken: bookingInput.accessToken,
+          data: FmCon,
+          mails: mails,
+        });
+        return response;
+      })
+      .then(async (result) => {
+        if (result.data.data.id) FMC = true;
+        console.log("2", result.data.data.id);
+        const FIssuanceFesponse = await flightIssuance({
+          id: result?.data?.data?.id,
+          accessToken: bookingInput.accessToken,
+          mails: mails,
+        });
+        // console.log("FIssuanceFesponse", FIssuanceFesponse?.data?.data);
+
+        if (FIssuanceFesponse?.data?.data) Issuance = true;
+        console.log("3", result.data.data.id);
+        return FIssuanceFesponse?.data?.data;
+      });
+
+    console.log("Order-Management", Book);
+    console.log("Issuance-Management-FMC", FMC);
+    console.log("Issuance", Issuance);
+    const booking = new FlightBooking({
+      FlightBooked: IssuanceData,
+      littelFlightInfo: bookingInput.littelFlightInfo,
+      travelers: bookingInput.Travelers,
+      reference: bookingInput.transactionReference,
+      MFlight: bookingInput?.flight,
+      transactionResponse: verifyTransaction,
+    });
+    console.log("Created booking", booking);
+    const createdBooked = await booking.save();
+    console.log("Created booking", createdBooked);
+    return createdBooked;
+  } catch (err) {
+    // console.log("error", err.response.data.errors);
+    console.log("error in booking and issuing ticket", err.response);
+    throw err;
+  }
+};
+
 module.exports = {
   multiCityFlight,
   flightOffers,
   flightOffersPricing,
+  flightBooking,
 };
