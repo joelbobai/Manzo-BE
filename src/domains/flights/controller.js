@@ -1,5 +1,9 @@
 const axios = require("axios");
+const IataAirport = require("./public/IATA_airports.json");
 const crypto = require("crypto");
+const { paystackVerifyTransaction } = require("../../config/paystack");
+const FlightBooking = require("./model");
+const { sendEmailNoReply } = require("./../../util/sendMail");
 
 const { AMA_API_KEY, NODE_ENV } = process.env;
 
