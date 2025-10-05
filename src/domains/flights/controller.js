@@ -16,56 +16,37 @@ const AMADEUS_HEADERS = {
   "Content-Type": "application/vnd.amadeus+json",
 };
 
-function getCommission(iataCode) {
-  let commission = 0;
+const COMMISSION_BY_CARRIER = new Map([
+  ["SA", 9],
+  ["UR", 3],
+  ["HR", 0],
+  ["5Z", 0],
+  ["TK", 0],
+  ["HF", 6],
+  ["KQ", 0],
+  ["MS", 7],
+  ["KP", 6],
+  ["WB", 10],
+  ["ET", 13],
+  ["BA", 12],
+  ["AF", 0],
+  ["QR", 9],
+  ["AT", 6],
+  ["AW", 3],
+  ["P4", 6],
+  ["LH", 0],
+  ["DL", 0],
+  ["KL", 0],
+  ["DT", 6],
+]);
 
-  if (iataCode === "SA") {
-    commission = 9;
-  } else if (iataCode === "UR") {
-    commission = 3;
-  } else if (iataCode === "HR") {
-    commission = 0;
-  } else if (iataCode === "5Z") {
-    commission = 0;
-  } else if (iataCode === "TK") {
-    commission = 0;
-  } else if (iataCode === "HF") {
-    commission = 6;
-  } else if (iataCode === "KQ") {
-    commission = 0;
-  } else if (iataCode === "MS") {
-    commission = 7;
-  } else if (iataCode === "KP") {
-    commission = 6;
-  } else if (iataCode === "WB") {
-    commission = 10;
-  } else if (iataCode === "ET") {
-    commission = 13;
-  } else if (iataCode === "BA") {
-    commission = 12;
-  } else if (iataCode === "AF") {
-    commission = 0;
-  } else if (iataCode === "QR") {
-    commission = 9;
-  } else if (iataCode === "AT") {
-    commission = 6;
-  } else if (iataCode === "AW") {
-    commission = 3;
-  } else if (iataCode === "P4") {
-    commission = 6;
-  } else if (iataCode === "LH") {
-    commission = 0;
-  } else if (iataCode === "DL") {
-    commission = 0;
-  } else if (iataCode === "KL") {
-    commission = 0;
-  } else if (iataCode === "DT") {
-    commission = 6;
-  } else {
-    commission = 0;
+function getCommission(iataCode) {
+  if (!iataCode) {
+    return 0;
   }
 
-  return commission;
+  const normalizedCode = String(iataCode).toUpperCase();
+  return COMMISSION_BY_CARRIER.get(normalizedCode) ?? 0;
 }
 
 const generateAmaClientRef = () => crypto.randomBytes(8).toString("hex");
@@ -140,7 +121,7 @@ const flightIssuance = async (data) => {
 
     let Html;
     const response = await axios.post(
-      `${Domain}/v1/booking/flight-orders/${data?.id}/issuance`,
+      `${AMADEUS_DOMAIN}/v1/booking/flight-orders/${data?.id}/issuance`,
       {},
       {
         headers: {
@@ -155,10 +136,16 @@ const flightIssuance = async (data) => {
       flight = response?.data?.data;
     }
 
-    const bookingRef = flight.associatedRecords[0].reference;
-    const issueDate = new Date(
-      flight.associatedRecords[1].creationDate
-    ).toDateString();
+    if (!flight) {
+      throw new Error("Unable to retrieve flight issuance details");
+    }
+
+    const bookingRef = flight?.associatedRecords?.[0]?.reference || "";
+    const issuanceRecord =
+      flight?.associatedRecords?.[1] || flight?.associatedRecords?.[0];
+    const issueDate = issuanceRecord?.creationDate
+      ? new Date(issuanceRecord.creationDate).toDateString()
+      : new Date().toDateString();
     const airlineCode = flight.flightOffers[0].validatingAirlineCodes[0];
 
     const travelers = flight.travelers
@@ -280,7 +267,7 @@ const flightReserved = async (data) => {
     let flight;
     let Html;
     const response = await axios.post(
-      `${Domain}/v1/booking/flight-orders`,
+      `${AMADEUS_DOMAIN}/v1/booking/flight-orders`,
       data?.data,
       {
         headers: {
@@ -294,10 +281,15 @@ const flightReserved = async (data) => {
     if (response?.data?.data) {
       flight = response?.data?.data;
     }
-    const bookingRef = flight.associatedRecords[0].reference;
-    const issueDate = new Date(
-      flight.associatedRecords[0].creationDate
-    ).toDateString();
+
+    if (!flight) {
+      throw new Error("Unable to reserve flight booking");
+    }
+
+    const bookingRef = flight?.associatedRecords?.[0]?.reference || "";
+    const issueDate = flight?.associatedRecords?.[0]?.creationDate
+      ? new Date(flight.associatedRecords[0].creationDate).toDateString()
+      : new Date().toDateString();
 
     const travelers = flight.travelers
       .map(
@@ -414,7 +406,7 @@ const flightReserved = async (data) => {
 const flightCommission = async (data) => {
   try {
     const response = await axios.patch(
-      `${Domain}/v1/booking/flight-orders/${data?.id}`,
+      `${AMADEUS_DOMAIN}/v1/booking/flight-orders/${data?.id}`,
       data?.data,
       {
         headers: {
@@ -432,19 +424,16 @@ const flightCommission = async (data) => {
 };
 
 const flightBooking = async (bookingInput) => {
-  let Issuance;
-  let Book;
-  let mails = ["manzotravels@gmail.com"];
+  const mails = ["manzotravels@gmail.com"];
 
-  let percent = await getCommission(
-    bookingInput?.flight?.validatingAirlineCodes[0]
+  const commissionPercentage = getCommission(
+    bookingInput?.flight?.validatingAirlineCodes?.[0]
   );
-  // console.log("percent", percent);
   try {
     const verifyTransaction = await paystackVerifyTransaction(
       bookingInput.transactionReference
     );
-    let FmCon = JSON.stringify({
+    const commissionPayload = JSON.stringify({
       data: {
         type: "flight-order",
         commissions: [
@@ -453,14 +442,14 @@ const flightBooking = async (bookingInput) => {
             values: [
               {
                 commissionType: "NEW",
-                percentage: percent,
+                percentage: commissionPercentage,
               },
             ],
           },
         ],
       },
     });
-    let Foffer = JSON.stringify({
+    const offerPayload = JSON.stringify({
       data: {
         type: "flight-order",
         flightOffers: [bookingInput.flight],
@@ -484,72 +473,57 @@ const flightBooking = async (bookingInput) => {
         "User with the provided Transaction Reference already exists"
       );
     }
-    // console.log("here ==>", verifyTransaction.data.gateway_response, req.body);
-    console.log("success", verifyTransaction);
-    console.log("success", verifyTransaction?.data?.status);
     if (verifyTransaction?.data?.status !== "success") {
-      console.log("Paystack Transaction Failed or Successful");
-      throw Error("Paystack Transaction Failed or Successful");
-    }
-    // console.log("pass verifyTransaction");
-
-    // console.log("pass checking if transaction already exists");
-    for (let i = 0; i < bookingInput?.Travelers?.length; i++) {
-      mails.push(bookingInput?.Travelers[i]?.contact?.emailAddress);
+      throw Error("Paystack transaction was not successful");
     }
 
-    console.log(mails);
+    bookingInput?.Travelers?.forEach((traveler) => {
+      const email = traveler?.contact?.emailAddress;
+      if (email) {
+        mails.push(email);
+      }
+    });
 
-    let IssuanceData = await flightReserved({
-      data: Foffer,
-      mails: mails,
+    const uniqueMails = [...new Set(mails)];
+
+    const reservedResponse = await flightReserved({
+      data: offerPayload,
+      mails: uniqueMails,
       accessToken: bookingInput.accessToken,
-      dictionaries: bookingInput.littelFlightInfo[0]?.dictionaries,
-    })
-      .then(async (result) => {
-        if (result.data.data.id) Book = true;
-        console.log("1", result.data.data.id);
-        const response = await flightCommission({
-          id: result?.data?.data?.id,
-          accessToken: bookingInput.accessToken,
-          data: FmCon,
-          mails: mails,
-        });
-        return response;
-      })
-      .then(async (result) => {
-        if (result.data.data.id) FMC = true;
-        console.log("2", result.data.data.id);
-        const FIssuanceFesponse = await flightIssuance({
-          id: result?.data?.data?.id,
-          accessToken: bookingInput.accessToken,
-          mails: mails,
-        });
-        // console.log("FIssuanceFesponse", FIssuanceFesponse?.data?.data);
+      dictionaries: bookingInput.littelFlightInfo?.[0]?.dictionaries,
+    });
 
-        if (FIssuanceFesponse?.data?.data) Issuance = true;
-        console.log("3", result.data.data.id);
-        return FIssuanceFesponse?.data?.data;
-      });
+    const bookingId = reservedResponse?.data?.data?.id;
+    if (!bookingId) {
+      throw new Error("Unable to reserve flight booking");
+    }
 
-    console.log("Order-Management", Book);
-    console.log("Issuance-Management-FMC", FMC);
-    console.log("Issuance", Issuance);
+    await flightCommission({
+      id: bookingId,
+      accessToken: bookingInput.accessToken,
+      data: commissionPayload,
+      mails: uniqueMails,
+    });
+
+    const issuanceResponse = await flightIssuance({
+      id: bookingId,
+      accessToken: bookingInput.accessToken,
+      mails: uniqueMails,
+    });
+
     const booking = new FlightBooking({
-      FlightBooked: IssuanceData,
+      FlightBooked: issuanceResponse?.data?.data,
       littelFlightInfo: bookingInput.littelFlightInfo,
       travelers: bookingInput.Travelers,
       reference: bookingInput.transactionReference,
       MFlight: bookingInput?.flight,
       transactionResponse: verifyTransaction,
     });
-    console.log("Created booking", booking);
-    const createdBooked = await booking.save();
-    console.log("Created booking", createdBooked);
-    return createdBooked;
+
+    return await booking.save();
   } catch (err) {
-    // console.log("error", err.response.data.errors);
-    console.log("error in booking and issuing ticket", err.response);
+    const errorMessage = err?.response?.data || err.message || err;
+    console.error("error in booking and issuing ticket", errorMessage);
     throw err;
   }
 };
