@@ -1,28 +1,20 @@
 // .Env config
 require("dotenv").config();
-const dns = require("dns");
 const nodemailer = require("nodemailer");
-
-// Render instances sometimes default to IPv6 first which Gmail does not
-// consistently accept for SMTP. Prioritise IPv4 lookups to avoid ENETUNREACH
-// errors when establishing the SMTP connection.
-dns.setDefaultResultOrder?.("ipv4first");
+const smtpTransport = require("nodemailer-smtp-transport");
 const { AUTH_EMAIL_NO_REPLY, AUTH_PASS_NO_REPLY } = process.env;
-
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  requireTLS: true,
-  connectionTimeout: 15000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-  auth: {
-    user: AUTH_EMAIL_NO_REPLY,
-    pass: AUTH_PASS_NO_REPLY,
-  },
-});
-
+let transporter = nodemailer.createTransport(
+  smtpTransport({
+    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user: AUTH_EMAIL_NO_REPLY,
+      pass: AUTH_PASS_NO_REPLY,
+    },
+  })
+);
 
 transporter.verify((error, success) => {
   if (error) {
