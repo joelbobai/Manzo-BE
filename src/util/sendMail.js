@@ -7,6 +7,8 @@ let transporter = nodemailer.createTransport(
   smtpTransport({
     service: "gmail",
     host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
     auth: {
       user: AUTH_EMAIL_NO_REPLY,
       pass: AUTH_PASS_NO_REPLY,
