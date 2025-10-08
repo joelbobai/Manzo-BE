@@ -551,8 +551,8 @@ router.post("/issueTicket", async (req, res) => {
       littelFlightInfo,
       accessToken,
     });
-    console.log("booked", booked?.FlightBooked?.id);
-    res.status(200).json({ issueId: booked?.FlightBooked?.id });
+    console.log("someone just booked", booked?._id);
+    res.status(200).json({ issueId: booked?._id });
   } catch (error) {
     console.error("Error sending booking:1", error);
     console.error("Error sending boooking:2", error?.response?.data?.errors);
