@@ -24,7 +24,7 @@ async function verifyTransporter() {
     throw error;
   }
 }
-
+// Joel
 /**
  * Send an email using the no-reply transporter.
  * @param {import("nodemailer").SendMailOptions} mailOptions
