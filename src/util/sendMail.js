@@ -7,15 +7,16 @@ if (!AUTH_EMAIL_NO_REPLY || !AUTH_PASS_NO_REPLY) {
 }
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
-  host: "smtp.gmail.com",
+  host: "mail.manzotravels.com",
   port: 465,
-  secure: true, // use SSL
+  secure: true, // true for port 465 (SSL)
   auth: {
     user: AUTH_EMAIL_NO_REPLY,
-    pass: AUTH_PASS_NO_REPLY,
+    pass: AUTH_PASS_NO_REPLY, // replace with actual email password
   },
-  connectionTimeout: 10000, // 10s
+  tls: {
+    rejectUnauthorized: false, // allow self-signed certs if needed
+  },
 });
 
 async function verifyTransporter() {
