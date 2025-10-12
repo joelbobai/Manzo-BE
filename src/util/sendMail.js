@@ -9,6 +9,8 @@ if (!AUTH_EMAIL_NO_REPLY || !AUTH_PASS_NO_REPLY) {
 const transporter = nodemailer.createTransport({
   service: "gmail",
   host: "smtp.gmail.com",
+  port: 465,
+  secure: true, // use SSL
   auth: {
     user: AUTH_EMAIL_NO_REPLY,
     pass: AUTH_PASS_NO_REPLY,
