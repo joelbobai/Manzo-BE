@@ -6,16 +6,17 @@ if (!AUTH_EMAIL_NO_REPLY || !AUTH_PASS_NO_REPLY) {
   throw new Error("Missing email credentials");
 }
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // use SSL
-  auth: {
-    user: AUTH_EMAIL_NO_REPLY,
-    pass: AUTH_PASS_NO_REPLY,
-  },
-});
+let transporter = nodemailer.createTransport(
+  smtpTransport({
+    service: "gmail",
+    host: "smtp.gmail.com",
+    auth: {
+      user: process.env.AUTH_EMAIL_NO_REPLY,
+      pass: process.env.AUTH_PASS_NO_REPLY,
+    },
+    connectionTimeout: 10000, // 10s
+  })
+);
 
 async function verifyTransporter() {
   try {
