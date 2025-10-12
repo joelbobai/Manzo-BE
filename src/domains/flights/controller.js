@@ -1,9 +1,11 @@
 const axios = require("axios");
-const IataAirport = require("./public/IATA_airports.json");
 const crypto = require("crypto");
 const { paystackVerifyTransaction } = require("../../config/paystack");
 const FlightBooking = require("./model");
-const { sendEmailNoReply } = require("./../../util/sendMail");
+const {
+  sendIssuanceEmail,
+  sendReservationEmail,
+} = require("./../../util/emailService");
 
 const { AMA_API_KEY, NODE_ENV } = process.env;
 
@@ -101,25 +103,10 @@ const flightOffersPricing = ({ payload, token }) =>
     clientRef: AMA_API_KEY,
   });
 
-const filterIataAirport = (iataCode) => {
-  const newFilterData = IataAirport.find((item) => {
-    return (
-      item.IATA && item.IATA.toLowerCase().includes(iataCode.toLowerCase())
-    );
-  });
-
-  return newFilterData;
-};
-const money = new Intl.NumberFormat("en-us", {
-  currency: "NGN",
-  style: "currency",
-});
-
 const flightIssuance = async (data) => {
   try {
     let flight;
 
-    let Html;
     const response = await axios.post(
       `${AMADEUS_DOMAIN}/v1/booking/flight-orders/${data?.id}/issuance`,
       {},
@@ -140,122 +127,13 @@ const flightIssuance = async (data) => {
       throw new Error("Unable to retrieve flight issuance details");
     }
 
-    const bookingRef = flight?.associatedRecords?.[0]?.reference || "";
-    const issuanceRecord =
-      flight?.associatedRecords?.[1] || flight?.associatedRecords?.[0];
-    const issueDate = issuanceRecord?.creationDate
-      ? new Date(issuanceRecord.creationDate).toDateString()
-      : new Date().toDateString();
-    const airlineCode = flight.flightOffers[0].validatingAirlineCodes[0];
-
-    const travelers = flight.travelers
-      .map((traveler) => {
-        const ticket = flight.tickets.find((t) => t.travelerId === traveler.id);
-        return `
-        <p><b>${traveler.name.firstName} ${traveler?.name?.middleName} ${traveler.name.lastName}</b> (${traveler.gender})</p>
-        <p>E-Ticket: <b>${ticket.documentNumber}</b></p>
-        <p>Contact: ${traveler.contact.emailAddress} | +${traveler.contact.phones[0].countryCallingCode} ${traveler.contact.phones[0].number}</p>
-        <hr>`;
-      })
-      .join("");
-    data.dictionaries;
-    const segments = (data) => {
-      let seg = data.segments
-        .map((segment, index) => {
-          return ` <p><b>Flight:</b> ${segment.carrierCode} ${
-            segment.number
-          }</p>
-                <p><b>Departure:</b> <b>(${
-                  segment.departure.iataCode
-                })</b> ${` ${
-            filterIataAirport(segment?.departure?.iataCode)?.Airport_name
-          },  ${
-            filterIataAirport(segment?.departure?.iataCode)?.Location_served
-          }`}  (Terminal ${segment.departure.terminal}) - ${new Date(
-            segment.departure.at
-          ).toLocaleString()}</p>
-                <p><b>Arrival:</b> <b>(${segment.arrival.iataCode})</b> ${`${
-            filterIataAirport(segment?.arrival?.iataCode)?.Airport_name
-          },  ${
-            filterIataAirport(segment?.arrival?.iataCode)?.Location_served
-          }`} (Terminal ${segment.arrival.terminal}) - ${new Date(
-            segment.arrival.at
-          ).toLocaleString()}</p>
-           <p><b>Aircraft:</b> ${segment.aircraft.code}</p>
-                <p><b>Booking Status:</b> ${segment.bookingStatus}</p>
-                <p><b>Stops:</b> ${segment.numberOfStops} (Non-stop flight)</p>
-          `;
-        })
-        .join("");
-      return seg;
-    };
-
-    const flightDetails = flight.flightOffers[0].itineraries
-      .map((itinerary, index) => {
-        // const segment = itinerary.segments[0];
-        return `
-            <section style="background-color: rgba(0, 43, 116, 0.105); padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-                <h3>${index === 0 ? "Departure" : "Return"} Flight</h3>
-               
-                ${segments(itinerary)}
-        
-        
-               
-            </section>
-        `;
-      })
-      .join("");
-
-    Html = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Flight Ticket Issuance Confirmation</title>
-    </head>
-    <body style="font-family: Arial, sans-serif;">
-        <div style="width: 100%; max-width: 600px; margin: auto; padding: 20px; background: #f4f4f4; border-radius: 10px;">
-            <header style="background: #ff5900; color: white; padding: 15px; text-align: center; border-radius: 5px;">
-                <h2>Your Flight Ticket Issuance Confirmation</h2>
-            </header>
-
-            <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                <h3>Booking Information</h3>
-                <p><b>Booking Reference:</b> ${bookingRef}</p>
-                <p><b>Issue Date:</b> ${issueDate}</p>
-                <p><b>Validating Airline:</b> ${airlineCode}</p>
-            </section>
-
-            <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                <h3>Traveler & Ticket Details</h3>
-                ${travelers}
-            </section>
-
-            ${flightDetails}
-
-            <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                <h3>Pricing</h3>
-                <p><b>Total Price:</b>  ${money.format(
-                  flight.flightOffers[0].price.grandTotal
-                )}</p>
-            </section>
-
-            <footer style="background: #ddd; padding: 10px; text-align: center; border-radius: 5px; margin-top: 10px;">
-                <p>For any inquiries, please contact <b>Manzo Travels</b> at <a href="mailto:manzotravels@gmail.com">manzotravels@gmail.com</a>.</p>
-                <p>&copy; 2025 Manzo Travels & Tours</p>
-            </footer>
-        </div>
-    </body>
-    </html>`;
-
-    const mailOptions = {
-      from: "Manzo Travels <noreply@manzotravels.com>",
-      to: data?.mails.join(","),
-      subject: "Ticket Issue Confirmation",
-      html: Html,
-    };
-
-    await sendEmailNoReply(mailOptions);
+    await sendIssuanceEmail({
+      flight,
+      data: {
+        mails: data?.mails,
+        dictionaries: data?.dictionaries,
+      },
+    });
     return response;
   } catch (err) {
     console.log("error flightReserved", err);
@@ -265,7 +143,6 @@ const flightIssuance = async (data) => {
 const flightReserved = async (data) => {
   try {
     let flight;
-    let Html;
     const response = await axios.post(
       `${AMADEUS_DOMAIN}/v1/booking/flight-orders`,
       data?.data,
@@ -286,117 +163,13 @@ const flightReserved = async (data) => {
       throw new Error("Unable to reserve flight booking");
     }
 
-    const bookingRef = flight?.associatedRecords?.[0]?.reference || "";
-    const issueDate = flight?.associatedRecords?.[0]?.creationDate
-      ? new Date(flight.associatedRecords[0].creationDate).toDateString()
-      : new Date().toDateString();
-
-    const travelers = flight.travelers
-      .map(
-        (traveler) => `
-          <p><b>${traveler.name.firstName} ${traveler?.name?.middleName} ${traveler.name.lastName}</b> (${traveler.travelerType})</p>
-          <p>DOB: ${traveler.dateOfBirth}</p>
-          <p>Contact: ${traveler.contact.emailAddress} | +${traveler.contact.phones[0].countryCallingCode} ${traveler.contact.phones[0].number}</p>
-      `
-      )
-      .join("");
-
-    const segments = (data) => {
-      let seg = data.segments
-        .map((segment, index) => {
-          return ` <p><b>Flight:</b> ${segment.carrierCode} ${
-            segment.number
-          }</p>
-                  <p><b>Departure:</b> <b>(${
-                    segment.departure.iataCode
-                  })</b> ${` ${
-            filterIataAirport(segment?.departure?.iataCode)?.Airport_name
-          },  ${
-            filterIataAirport(segment?.departure?.iataCode)?.Location_served
-          }`}  (Terminal ${segment.departure.terminal}) - ${new Date(
-            segment.departure.at
-          ).toLocaleString()}</p>
-                  <p><b>Arrival:</b> <b>(${segment.arrival.iataCode})</b> ${`${
-            filterIataAirport(segment?.arrival?.iataCode)?.Airport_name
-          },  ${
-            filterIataAirport(segment?.arrival?.iataCode)?.Location_served
-          }`} (Terminal ${segment.arrival.terminal}) - ${new Date(
-            segment.arrival.at
-          ).toLocaleString()}</p>
-             <p><b>Aircraft:</b> ${segment.aircraft.code}</p>
-                  
-                  <p><b>Stops:</b> ${
-                    segment.numberOfStops
-                  } (Non-stop flight)</p>
-            `;
-        })
-        .join("");
-      return seg;
-    };
-
-    const flightDetails = flight.flightOffers[0].itineraries
-      .map((itinerary, index) => {
-        const segment = itinerary.segments[0];
-        return `
-              <section style="background-color: rgba(0, 43, 116, 0.105); padding: 10px; border-radius: 5px; margin-bottom: 10px;">
-                  <h3>${index === 0 ? "Departure" : "Return"} Flight</h3>
-                 
-                 ${segments(itinerary)}
-              </section>
-          `;
-      })
-      .join("");
-
-    Html = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-          <meta charset="UTF-8">
-          <title>Flight Booking has been Reserved</title>
-      </head>
-      <body style="font-family: Arial, sans-serif;">
-          <div style="width: 100%; max-width: 600px; margin: auto; padding: 20px; background: #f4f4f4; border-radius: 10px;">
-              <header style="background: #ff5900; color: white; padding: 15px; text-align: center; border-radius: 5px;">
-                  <h2>Your Flight Booking has been Reserved</h2>
-              </header>
-  
-              <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                  <h3>Booking Information</h3>
-                  <p><b>Booking Reference:</b> ${bookingRef}</p>
-                  <p><b>Issue Date:</b> ${issueDate}</p>
-              </section>
-  
-              <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                  <h3>Traveler Details</h3>
-                  ${travelers}
-              </section>
-  
-              ${flightDetails}
-  
-              <section style="background: white; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                  <h3>Pricing</h3>
-                  <p><b>Total Price:</b>  ${money.format(
-                    flight.flightOffers[0].price.grandTotal
-                  )}</p>
-              </section>
-  
-              <footer style="background: #ddd; padding: 10px; text-align: center; border-radius: 5px; margin-top: 10px;">
-                  <p>For any inquiries, please contact <b>Manzo Travels</b> at <a href="mailto:manzotravels@gmail.com">manzotravels@gmail.com</a>.</p>
-                  <p>&copy; 2025 Manzo Travels & Tours</p>
-              </footer>
-          </div>
-      </body>
-      </html>
-      `;
-    console.log(data?.mails);
-    const mailOptions = {
-      from: "Manzo Travels <noreply@manzotravels.com>",
-      to: data?.mails.join(","),
-      subject: "Your flight booking has been Reserved",
-      html: Html,
-    };
-
-    await sendEmailNoReply(mailOptions);
+    await sendReservationEmail({
+      flight,
+      data: {
+        mails: data?.mails,
+        dictionaries: data?.dictionaries,
+      },
+    });
     return response;
   } catch (err) {
     console.log("error flightReserved", err);
@@ -509,6 +282,7 @@ const flightBooking = async (bookingInput) => {
       id: bookingId,
       accessToken: bookingInput.accessToken,
       mails: uniqueMails,
+      dictionaries: bookingInput.littelFlightInfo?.[0]?.dictionaries,
     });
 
     const booking = new FlightBooking({
