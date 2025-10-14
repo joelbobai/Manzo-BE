@@ -222,21 +222,7 @@ const flightBooking = async (bookingInput) => {
         ],
       },
     });
-    const offerPayload = JSON.stringify({
-      data: {
-        type: "flight-order",
-        flightOffers: [bookingInput.flight],
-        travelers: bookingInput.Travelers,
-        formOfPayments: [
-          {
-            other: {
-              method: "CASH",
-              flightOfferIds: [bookingInput.flight.id],
-            },
-          },
-        ],
-      },
-    });
+
     // checking if transaction already exists
     const existingTransaction = await FlightBooking.findOne({
       reference: bookingInput.transactionReference,
@@ -259,27 +245,19 @@ const flightBooking = async (bookingInput) => {
 
     const uniqueMails = [...new Set(mails)];
 
-    const reservedResponse = await flightReserved({
-      data: offerPayload,
-      mails: uniqueMails,
-      accessToken: bookingInput.accessToken,
-      dictionaries: bookingInput.littelFlightInfo?.[0]?.dictionaries,
-    });
-
-    const bookingId = reservedResponse?.data?.data?.id;
-    if (!bookingId) {
+    if (!bookingInput?.reservedId) {
       throw new Error("Unable to reserve flight booking");
     }
 
     await flightCommission({
-      id: bookingId,
+      id: bookingInput?.reservedId,
       accessToken: bookingInput.accessToken,
       data: commissionPayload,
       mails: uniqueMails,
     });
 
     const issuanceResponse = await flightIssuance({
-      id: bookingId,
+      id: bookingInput?.reservedId,
       accessToken: bookingInput.accessToken,
       mails: uniqueMails,
       dictionaries: bookingInput.littelFlightInfo?.[0]?.dictionaries,
@@ -302,9 +280,59 @@ const flightBooking = async (bookingInput) => {
   }
 };
 
+const flightReservation = async (bookingInput) => {
+  try {
+    const mails = ["manzotravels@gmail.com"];
+
+    const offerPayload = JSON.stringify({
+      data: {
+        type: "flight-order",
+        flightOffers: [bookingInput.flight],
+        travelers: bookingInput.Travelers,
+        formOfPayments: [
+          {
+            other: {
+              method: "CASH",
+              flightOfferIds: [bookingInput.flight.id],
+            },
+          },
+        ],
+      },
+    });
+
+    bookingInput?.Travelers?.forEach((traveler) => {
+      const email = traveler?.contact?.emailAddress;
+      if (email) {
+        mails.push(email);
+      }
+    });
+
+    const uniqueMails = [...new Set(mails)];
+
+    const reservedResponse = await flightReserved({
+      data: offerPayload,
+      mails: uniqueMails,
+      accessToken: bookingInput.accessToken,
+      dictionaries: bookingInput.littelFlightInfo?.[0]?.dictionaries,
+    });
+
+    const bookingId = reservedResponse?.data?.data?.id;
+    if (!bookingId) {
+      throw new Error("Unable to reserve flight booking");
+    }
+
+    return bookingId;
+  } catch (err) {
+    const errorMessage = err?.response?.data || err.message || err;
+    console.error("error in booking and issuing ticket", errorMessage);
+    throw err;
+  }
+};
+
 module.exports = {
   multiCityFlight,
   flightOffers,
   flightOffersPricing,
   flightBooking,
+  flightReservation,
 };

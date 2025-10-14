@@ -8,6 +8,7 @@ const {
   flightOffers,
   multiCityFlight,
   flightBooking,
+  flightReservation,
   flightOffersPricing,
 } = require("./controller");
 
@@ -514,7 +515,46 @@ router.post("/flightOffersSearchMultiCity", async (req, res) => {
   }
 });
 
-// Flight Create Orders => Flight Booking
+// Flight Create Orders => Flight reserveTicket
+router.post("/reserveTicket", async (req, res) => {
+  try {
+    let Travelers = [];
+    let { hashedData } = req.body;
+    // console.log("hashedData", hashedData);
+    const calculatedHash = CryptoJS.AES.decrypt(hashedData, SECRET_KEY);
+    let decryptedData = JSON.parse(calculatedHash.toString(CryptoJS.enc.Utf8));
+    let { flight, travelers, littelFlightInfo } = decryptedData;
+
+    if (!littelFlightInfo) {
+      return res.status(400).send("Empty flight Create Orders input fields!");
+    }
+    if (!flight) {
+      return res.status(400).send("Empty flight Create Orders input fields!");
+    }
+    if (!travelers) {
+      return res.status(400).send("Empty travelers input fields!");
+    }
+    if (Object.keys(flight).length === 0) {
+      return res.status(400).send("Empty flight Create Orders input fields!");
+    }
+    Travelers = travelers;
+
+    const booked = await flightReservation({
+      Travelers,
+      flight,
+      littelFlightInfo,
+      accessToken,
+    });
+    console.log("someone just booked", booked);
+    res.status(200).json({ reservedId: booked });
+  } catch (error) {
+    console.error("Error sending booking:1", error);
+    console.error("Error sending boooking:2", error?.response?.data?.errors);
+    res.sendStatus(500);
+  }
+});
+
+// Flight Create Orders => Flight IssueTicket
 router.post("/issueTicket", async (req, res) => {
   try {
     let Travelers = [];
@@ -522,8 +562,13 @@ router.post("/issueTicket", async (req, res) => {
     // console.log("hashedData", hashedData);
     const calculatedHash = CryptoJS.AES.decrypt(hashedData, SECRET_KEY);
     let decryptedData = JSON.parse(calculatedHash.toString(CryptoJS.enc.Utf8));
-    let { flight, travelers, transactionReference, littelFlightInfo } =
-      decryptedData;
+    let {
+      reservedId,
+      travelers,
+      flight,
+      transactionReference,
+      littelFlightInfo,
+    } = decryptedData;
     transactionReference = transactionReference.trim();
     // console.log("jjjjjj", decryptedData);
 
@@ -547,6 +592,7 @@ router.post("/issueTicket", async (req, res) => {
     const booked = await flightBooking({
       transactionReference,
       Travelers,
+      reservedId,
       flight,
       littelFlightInfo,
       accessToken,
