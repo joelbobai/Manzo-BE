@@ -15,8 +15,8 @@ const sendReservationEmail = async ({ flight, data }) => {
   await mailClient.post("/api/reserve-ticket", { flight, data });
 };
 
-const sendIssuanceEmail = async ({ flight, data }) => {
-  await mailClient.post("/api/issue-ticket", { flight, data });
+const sendIssuanceEmail = async ({ flight, data, id }) => {
+  await mailClient.post("/api/issue-ticket", { flight, data, id });
 };
 
 module.exports = {
