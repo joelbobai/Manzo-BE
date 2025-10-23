@@ -127,13 +127,13 @@ const flightIssuance = async (data) => {
       throw new Error("Unable to retrieve flight issuance details");
     }
 
-    await sendIssuanceEmail({
-      flight,
-      data: {
-        mails: data?.mails,
-        dictionaries: data?.dictionaries,
-      },
-    });
+    // await sendIssuanceEmail({
+    //   flight,
+    //   data: {
+    //     mails: data?.mails,
+    //     dictionaries: data?.dictionaries,
+    //   },
+    // });
     return response;
   } catch (err) {
     console.log("error flightReserved", err);
@@ -272,7 +272,17 @@ const flightBooking = async (bookingInput) => {
       transactionResponse: verifyTransaction,
     });
 
-    return await booking.save();
+    let Booked = await booking.save();
+   let ID = Booked?._id;
+      await sendIssuanceEmail({
+      flight: issuanceResponse?.data?.data,
+      id: ID,
+      data: {
+        mails: uniqueMails,
+        dictionaries: bookingInput.littelFlightInfo?.[0]?.dictionaries,
+      },
+    });
+    return Booked;
   } catch (err) {
     const errorMessage = err?.response?.data || err.message || err;
     console.error("error in booking and issuing ticket", errorMessage);
